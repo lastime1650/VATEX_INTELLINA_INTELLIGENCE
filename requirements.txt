@@ -1,0 +1,6 @@
+OTXv2
+requests
+fastapi
+uvicorn
+pefile
+mitreattack-python
