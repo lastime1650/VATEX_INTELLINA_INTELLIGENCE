@@ -22,7 +22,7 @@
 
 # Structure
 
-![initial](https://github.com/lastime1650/VATEX_INTELLINA_INTELLIGENCE/blob/main/VATEX_INTELLINA_STRUCTURE.png)
+![initial](https://github.com/lastime1650/VATEX_INTELLINA_INTELLIGENCE/blob/main/VATEX_INTELLINA_STRUCTUREV2.png)
 
 ---
 
