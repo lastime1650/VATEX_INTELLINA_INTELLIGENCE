@@ -1,5 +1,5 @@
 from typing import Optional, Union 
-from _PARENT import INTELLIGENCE_PARENT
+from intelligence._PARENT import INTELLIGENCE_PARENT
 import sqlite3
 from datetime import datetime
 from threading import Lock, Thread, Event
@@ -12,6 +12,11 @@ from concurrent.futures import ThreadPoolExecutor
 '''
 from OTXv2 import OTXv2
 from OTXv2 import IndicatorTypes
+
+
+"""
+
+replaced to "IndicatorTypes"
 
 
 from enum import Enum
@@ -37,7 +42,7 @@ class OTXIndicatorTypesEnum(Enum):
     Ja3 = "Ja3"
     Osquery = "Osquery"
     Sslcertfingerprint = "Sslcertfingerprint"
-    Bitcoinaddress = "Bitcoinaddress"
+    Bitcoinaddress = "Bitcoinaddress" """
     
 
 class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
@@ -54,6 +59,7 @@ class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
         #SQLITE3
         self.SQLITE_DB_PATH = (self.my_pwd_dir) + "/resources/alien_otx/" + "INTELLIGENCE_OTX.db"
         self.conn = sqlite3.connect(self.SQLITE_DB_PATH, check_same_thread=False) # 멀티스레드 보장
+        self.conn.row_factory = sqlite3.Row # SELECT 시 Dict으로 칼럼명: 값 포맷지원
         self.cursor = self.conn.cursor()
         self._create_tables()
         self.Sqlite3_lock = Lock()
@@ -205,14 +211,86 @@ class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
                     self.conn.commit()
                 except Exception as e:
                     print(e)
-                    
-    def _search_indicator(self, query:str, type:IndicatorTypes)->bool:
+
+    def _update_indicator_detail(self, indicatorJSON: dict):
+        """
+        get_indicator_details_full() API의 결과(개별 Indicator 상세 정보)를 파싱하여 DB에 저장
+        
+        이런 다이렉트 쿼리 결과의 겨우 Pulse가 보장되지 않을 수 있으며,,,, 여부만 알 수 있는 수준.
+        
+        """
+        if not indicatorJSON or 'general' not in indicatorJSON:
+            return
+
+        general_info = indicatorJSON.get('general', {})
+        base_indicator = general_info.get('base_indicator', {})
+        pulse_info = general_info.get('pulse_info', {})
+
+        # Indicator 공통 정보 추출 (모든 관련 Pulse에 동일하게 적용됨)
+        indicator_data = (
+            base_indicator.get('id'),
+            general_info.get('indicator'),
+            general_info.get('type_title'),
+            None,  # 'created'는 이 JSON 구조에 명확히 없음
+            base_indicator.get('content'),
+            base_indicator.get('title'),
+            base_indicator.get('description'),
+            None,  # 'expiration' 정보 없음
+            1,     # API에서 조회되었다는 것은 활성 상태로 간주
+            None   # 'role' 정보 없음
+        )
+
+        # 이 Indicator와 관련된 Pulse들을 순회하며 DB에 저장
+        common_data:tuple = (None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None,None)
+        pulse_id:str = "[TEMP]_None_Pulse-"
+        for pulse in pulse_info.get('pulses', []):
+            # Pulse 별 정보 추출
+            common_data = (
+                pulse.get("id"),
+                pulse.get("name"),
+                pulse.get("description"),
+                pulse.get("author_name"),
+                pulse.get("modified"),
+                pulse.get("created"),
+                pulse.get("revision"),
+                pulse.get("tlp"),
+                pulse.get("public"),
+                pulse.get("adversary"),
+                ",".join(pulse.get("tags", [])),
+                ",".join(pulse.get("targeted_countries", [])),
+                ",".join(pulse.get("malware_families", [])),
+                ",".join(pulse.get("attack_ids", [])),
+                ",".join(pulse.get("references", [])),
+                ",".join(pulse.get("industries", [])),
+                ",".join(pulse.get("extract_source", []))
+            )
+            pulse_id = pulse.get("id")
+            break
+            
+            
+        Primaryid = pulse_id + str(base_indicator.get("id"))
+        
         with self.Sqlite3_lock:
-            pass
-    
+            try:
+                self.cursor.execute('''
+                    REPLACE INTO OTX (
+                        Primaryid, id, name, description, author_name, modified, created, revision, tlp, public, adversary,
+                        tags, targeted_countries, malware_families, attack_ids, reference_list, industries, extract_source,
+                        indicators_id, indicators_indicator, indicators_type, indicators_created, indicators_content, indicators_title, indicators_description, indicators_expiration, indicators_is_active, indicators_role
+                    ) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''',
+                    (Primaryid,) + common_data + indicator_data
+                )
+                self.conn.commit()
+            except Exception as e:
+                print(f"[ERROR] in _update_indicator_detail: {e}")
+                
+                    
     def _loopupdate(self):
         while(True):
             if (self.is_enable):
+                print("[Otx] do loop update")
                 
                 self.is_updating = True ###################### 실행 전환
                 print("loop start")
@@ -225,7 +303,6 @@ class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
                     for pulse in pulses:
                         executor.submit(self._update_pules_indicator, pulse)
                 print("loop end")
-                quit()
                 
                 self.is_updating = False ##################### 대기 전환
                 self.update_last_seen = datetime.now()
@@ -235,17 +312,29 @@ class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
                     timeout=self.LoopUpdateEventWaitSec # 대기 초
                 ) 
                 
-    def _query_indicator(self, Type:OTXIndicatorTypesEnum, Value:str)->Optional[Union[dict, list[dict]]]:
-        ioc_type:str = Type.value
+    def _query_indicator(self, Type:IndicatorTypes, Value:str)->Optional[list[dict]]:
+        ioc_type:str = str(Type)
         
         # query
         cur = self.conn.cursor()
         cur.execute("SELECT * FROM OTX WHERE indicators_type = ? AND indicators_indicator = ? ", (ioc_type, Value))
-        rows= list[dict]( cur.fetchall() )
-        if(rows):
+        rows = [dict(row) for row in cur.fetchall()]
+        if(rows and len(rows) > 0):
             return rows
         else:
-            return None
+            
+            # 없는 경우, 즉석 쿼리
+            self._update_indicator_detail(
+                self.otx.get_indicator_details_full(Type,Value) # 단점: 대기시간 설정값이 없음;; (지연 과부화 가능성 상승.)
+            )
+            
+            cur = self.conn.cursor()
+            cur.execute("SELECT * FROM OTX WHERE indicators_type = ? AND indicators_indicator = ? ", (ioc_type, Value))
+            rows = [dict(row) for row in cur.fetchall()]
+            if(rows and len(rows) > 0):
+                return rows
+        
+        return None
     
     # override
     '''
@@ -268,19 +357,19 @@ class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
         '''
             ipv4 아이피 얻어서 조회한다.
         '''
-        return self._query_indicator(OTXIndicatorTypesEnum.IPv4, ipv4)
+        return self._query_indicator( IndicatorTypes.IPv4, ipv4)
     
     def NETWORK_by_Domain(self, domain: str):
         '''
         도메인 조회
         '''
-        return self._query_indicator(OTXIndicatorTypesEnum.Domain, domain)
+        return self._query_indicator(IndicatorTypes.DOMAIN, domain)
 
     def FILE_by_SHA256(self, sha256: str):
         '''
             SHA256 해시로 파일 조회
         '''
-        return self._query_indicator(OTXIndicatorTypesEnum.FileHash_SHA256, sha256)
+        return self._query_indicator(IndicatorTypes.FILE_HASH_SHA256, sha256)
     
     '''
         Utility

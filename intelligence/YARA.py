@@ -2,7 +2,7 @@ import magic
 import yara
 import os
 from typing import Optional
-from _PARENT import INTELLIGENCE_PARENT
+from intelligence._PARENT import INTELLIGENCE_PARENT
 
 class INTELLIGENCE_CHILD__YARA(INTELLIGENCE_PARENT):
     

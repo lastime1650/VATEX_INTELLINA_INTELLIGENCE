@@ -12,6 +12,7 @@ from intelligence.sigcheck import INTELLIGENCE_CHILD__SIGCHECK
 from intelligence.alien_otx import INTELLIGENCE_CHILD__OTX
 from intelligence.YARA import INTELLIGENCE_CHILD__YARA
 from intelligence.threatfox import INTELLIGENCE_CHILD__THREATFOX
+from intelligence.malware_bazaar import INTELLIGENCE_CHILD__MALWAREBAZAAR
 
 class VATEX_INTELLINA():
     def __init__(
@@ -253,7 +254,8 @@ class VATEX_INTELLINA():
                 INTELLIGENCE_CHILD__OTX(API_KEY="API-KEY"),    # Alien Vault OTX Module
                 INTELLIGENCE_CHILD__SIGCHECK(),          # Windows SigChecker Module
                 INTELLIGENCE_CHILD__YARA("./intelligence/resources/yara"),
-                INTELLIGENCE_CHILD__THREATFOX(API_KEY="API-KEY")
+                INTELLIGENCE_CHILD__THREATFOX(API_KEY="API-KEY"),
+                INTELLIGENCE_CHILD__MALWAREBAZAAR(API_KEY="API-KEY")
             ]
         
 

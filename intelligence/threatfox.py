@@ -1,5 +1,6 @@
+import threading
 from typing import Optional, Union
-from _PARENT import INTELLIGENCE_PARENT
+from intelligence._PARENT import INTELLIGENCE_PARENT
 import sqlite3
 from datetime import datetime
 from requests import post
@@ -27,6 +28,7 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
         #SQLITE3
         self.SQLITE_DB_PATH = (self.my_pwd_dir) + "/resources/threatfox/" + "THREATFOX.db"
         self.conn = sqlite3.connect(self.SQLITE_DB_PATH, check_same_thread=False) # 멀티스레드 보장
+        self.conn.row_factory = sqlite3.Row # SELECT 시 Dict으로 칼럼명: 값 포맷지원
         self.cursor = self.conn.cursor()
         self._create_tables()
         
@@ -34,6 +36,12 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
         self.is_enable = True
         
         #self.Updates()
+        threading.Thread(
+            target = self.Updates,
+            daemon=True
+        ).start()
+        
+        
         
     def _create_tables(self):
         self.cursor.execute("""
@@ -117,8 +125,30 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
                 return None
         except:
             return None
+    
+    def _direct_query(self, value:str) -> bool :
+        print(f"value->{value}")
+        res = post(
+            url = "https://threatfox-api.abuse.ch/api/v1/",
+            headers = { "Auth-Key":self.API_KEY },
+            data= \
+                json.dumps({
+                    "query" : "search_ioc",
+                    "search_term" : value
+                })
+        )
+        if(res.status_code == 200 ):
+            JsonResponse = res.json()
+            print(JsonResponse)
+            if(JsonResponse["query_status"] == "ok"):
+                self._update_table( list[dict]( JsonResponse["data"] ) )
+                return True # 한 개 이상 만족한 다이렉트 조회 결과
+            
+        return False
+            
         
-    def _query_indicator(self, Type:ThreatFoxEnum, Value:str)->Optional[Union[dict, list[dict]]]:
+    
+    def _query_indicator(self, Type:ThreatFoxEnum, Value:str)->Optional[list[dict]]:
         ioc_type:str = ""
         if(Type == ThreatFoxEnum.DOMAIN):
             ioc_type = "domain" #Value -> "x64.x3le.ru" ===> non-http://
@@ -131,14 +161,26 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
         else:
             return None
         
+        
         # query
         cur = self.conn.cursor()
         cur.execute("SELECT * FROM THREATFOX WHERE ioc_type = ? AND ioc_value = ? ", (ioc_type, Value))
-        rows= list[dict]( cur.fetchall() )
+        rows = [dict(row) for row in cur.fetchall()] # [{...},{...}] 포맷
         if(rows):
             return rows
         else:
-            return None
+            print("없어서 추가진행")
+            # 없는 경우 다이렉트 쿼리 진행
+            self._direct_query(Value)
+            
+            # 다시 쿼리
+            cur = self.conn.cursor()
+            cur.execute("SELECT * FROM THREATFOX WHERE ioc_type = ? AND ioc_value = ? ", (ioc_type, Value))
+            rows = [dict(row) for row in cur.fetchall()] # [{...},{...}] 포맷
+            if(rows):
+                return rows
+            else:
+                return None
         
     
     # override
@@ -154,7 +196,8 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
             if(NewIoC):
                 self._update_table( NewIoC )
                 self.update_last_seen = datetime.now()
-            
+                
+            print("Db Data Updated at ThreatFox Module...")
             self.is_updating = False
     
     #def NETWORK_by_IPv4( self, ipv4:str )->Optional[dict]:
