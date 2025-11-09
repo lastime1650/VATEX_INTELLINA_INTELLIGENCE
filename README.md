@@ -26,6 +26,20 @@
 
 ---
 
+# Intelligence Module Intro
+
+![initial](https://github.com/lastime1650/VATEX_INTELLINA_INTELLIGENCE/blob/main/Intellina_Module_intro.png)
+
+You can extract features for specific indicator values through a total of two types: intelligence, which is infringement information collected from Internet information, and metadata based on internal pattern detection.
+
+To achieve that, the most important thing is "flexibility."
+
+Platforms have the inputs and outputs they pursue, so it's important to bring them together.
+
+VATEX INTELLINA INTELLIGENCE provides these features to make it flexible and easy to query intelligence information.
+
+---
+
 ## Key Components
 
 1. **INTELLINA Server** `(Python)`

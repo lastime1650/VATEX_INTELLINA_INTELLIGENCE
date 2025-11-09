@@ -101,9 +101,9 @@ print(Output)
 
 ###############################################################################################
 
+"""
 
-
-# 2. Query only Ipv4
+# 3. Query Filesha256
 RequestUri = "/file/sha256"
 Output = requests.get(
     f"http://{INTELLINA_SERVER_IP}:{INTELLINA_SERVER_PORT}{RequestUri}",
@@ -112,4 +112,4 @@ Output = requests.get(
     }
 ).json()
 
-print(Output)"""
+print(Output)

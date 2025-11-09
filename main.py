@@ -251,11 +251,11 @@ class VATEX_INTELLINA():
     def _get_intelligence_modules(self)->list[INTELLIGENCE_PARENT]:
         return \
             [
-                INTELLIGENCE_CHILD__OTX(API_KEY="API-KEY"),    # Alien Vault OTX Module
+                INTELLIGENCE_CHILD__OTX(API_KEY="API-KEY-here"),    # Alien Vault OTX Module
                 INTELLIGENCE_CHILD__SIGCHECK(),          # Windows SigChecker Module
                 INTELLIGENCE_CHILD__YARA("./intelligence/resources/yara"),
-                INTELLIGENCE_CHILD__THREATFOX(API_KEY="API-KEY"),
-                INTELLIGENCE_CHILD__MALWAREBAZAAR(API_KEY="API-KEY")
+                INTELLIGENCE_CHILD__THREATFOX(API_KEY="API-KEY-here"),
+                INTELLIGENCE_CHILD__MALWAREBAZAAR(API_KEY="API-KEY-here")
             ]
         
 

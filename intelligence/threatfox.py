@@ -5,6 +5,7 @@ import sqlite3
 from datetime import datetime
 from requests import post
 import json
+from queue import Queue
 '''
     ABUSE.CH
     
@@ -40,6 +41,10 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
             target = self.Updates,
             daemon=True
         ).start()
+        
+        
+        self.async_new_query_update_queue = Queue()
+        threading.Thread( target=self._async_new_query_data_by_queue,daemon=True ).start()
         
         
         
@@ -127,7 +132,7 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
             return None
     
     def _direct_query(self, value:str) -> bool :
-        print(f"value->{value}")
+        #print(f"value->{value}")
         res = post(
             url = "https://threatfox-api.abuse.ch/api/v1/",
             headers = { "Auth-Key":self.API_KEY },
@@ -139,7 +144,7 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
         )
         if(res.status_code == 200 ):
             JsonResponse = res.json()
-            print(JsonResponse)
+            #print(JsonResponse)
             if(JsonResponse["query_status"] == "ok"):
                 self._update_table( list[dict]( JsonResponse["data"] ) )
                 return True # 한 개 이상 만족한 다이렉트 조회 결과
@@ -168,7 +173,16 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
         rows = [dict(row) for row in cur.fetchall()] # [{...},{...}] 포맷
         if(rows):
             return rows
-        else:
+        
+        # 성능이슈로, 새로운 쿼리의 경우는 비동기적 큐기반으로 변경.
+        self.async_new_query_update_queue.put(
+            {
+                "ioc_type": ioc_type,
+                "Value": Value
+            }
+        )
+        
+        """else:
             print("없어서 추가진행")
             # 없는 경우 다이렉트 쿼리 진행
             self._direct_query(Value)
@@ -180,8 +194,16 @@ class INTELLIGENCE_CHILD__THREATFOX(INTELLIGENCE_PARENT):
             if(rows):
                 return rows
             else:
-                return None
+                return None"""
+        return None
         
+    def _async_new_query_data_by_queue(self):
+        while(True):
+            new_query_data:dict = self.async_new_query_update_queue.get()
+            ioc_type:str = new_query_data["ioc_type"]
+            Value:str = new_query_data["Value"]
+            
+            self._direct_query(Value)
     
     # override
     '''

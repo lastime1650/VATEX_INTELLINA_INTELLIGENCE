@@ -3,6 +3,7 @@ from intelligence._PARENT import INTELLIGENCE_PARENT
 import sqlite3
 from datetime import datetime
 from threading import Lock, Thread, Event
+from queue import Queue
 from concurrent.futures import ThreadPoolExecutor
 '''
     Alien OTX
@@ -72,6 +73,11 @@ class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
         self.LoopUpdateEventWaitSec = 5*3600 # 기본 5시간
         
         Thread(target=self._loopupdate, daemon=True).start()
+        
+        
+        # async-new-query-update-loop
+        self.async_new_query_update_queue = Queue()
+        Thread(target=self._async_new_query_data_by_queue, daemon=True).start()
         
         
         
@@ -219,12 +225,17 @@ class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
         이런 다이렉트 쿼리 결과의 겨우 Pulse가 보장되지 않을 수 있으며,,,, 여부만 알 수 있는 수준.
         
         """
+        #print(f"OTX - indicatorJSON ---->> {indicatorJSON} ")
         if not indicatorJSON or 'general' not in indicatorJSON:
             return
 
         general_info = indicatorJSON.get('general', {})
         base_indicator = general_info.get('base_indicator', {})
         pulse_info = general_info.get('pulse_info', {})
+        
+        # Indicator id가 없으면  실패
+        if(base_indicator.get('id') == None or base_indicator['id'] == ""):
+            return
 
         # Indicator 공통 정보 추출 (모든 관련 Pulse에 동일하게 적용됨)
         indicator_data = (
@@ -259,7 +270,7 @@ class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
                 ",".join(pulse.get("tags", [])),
                 ",".join(pulse.get("targeted_countries", [])),
                 ",".join(pulse.get("malware_families", [])),
-                ",".join(pulse.get("attack_ids", [])),
+                ",".join([attack['id'] for attack in pulse.get("attack_ids", [])]),
                 ",".join(pulse.get("references", [])),
                 ",".join(pulse.get("industries", [])),
                 ",".join(pulse.get("extract_source", []))
@@ -321,20 +332,48 @@ class INTELLIGENCE_CHILD__OTX(INTELLIGENCE_PARENT):
         rows = [dict(row) for row in cur.fetchall()]
         if(rows and len(rows) > 0):
             return rows
-        else:
-            
-            # 없는 경우, 즉석 쿼리
-            self._update_indicator_detail(
-                self.otx.get_indicator_details_full(Type,Value) # 단점: 대기시간 설정값이 없음;; (지연 과부화 가능성 상승.)
-            )
+        
+        # 비동기 쿼리 요청
+        self.async_new_query_update_queue.put(
+            {
+                "Type": Type,
+                "Value": Value
+            }
+        )
+        #[ 현재 주석처림됨. 쿼리자체가 너무 오래걸림 ] => self._async_new_query_data_by_queue() 에서 비동기 저장 처리.
+        """else:
+            try:
+                # 없는 경우,..
+                self._update_indicator_detail(
+                    self.otx.get_indicator_details_full(Type,Value) # 단점: 대기시간 설정값이 없음;; (지연 과부화 가능성 상승.)
+                )
+            except:
+                return None
             
             cur = self.conn.cursor()
             cur.execute("SELECT * FROM OTX WHERE indicators_type = ? AND indicators_indicator = ? ", (ioc_type, Value))
             rows = [dict(row) for row in cur.fetchall()]
             if(rows and len(rows) > 0):
-                return rows
+                return rows"""
         
         return None
+    
+    def _async_new_query_data_by_queue(self):
+        while(True):
+            new_query_data:dict = self.async_new_query_update_queue.get()
+            
+            Type:IndicatorTypes = new_query_data["Type"]
+            Value:str = new_query_data["Value"]
+            
+            # DB에 등록
+            try:
+                self._update_indicator_detail(
+                    self.otx.get_indicator_details_full(Type,Value) # 단점: 대기시간 설정값이 없음;; (지연 과부화 가능성 상승.)
+                )
+            except Exception as e :
+                print(f"OTX -> _async_new_query_data_by_queue [ {e} ]")
+                
+            
     
     # override
     '''
